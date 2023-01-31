@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geo-locator-deployment
+  namespace: system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: geo-locator-controller
+  template:
+    metadata:
+      labels:
+        app: geo-locator-controller
+    spec:
+      containers:
+        - name: geo-locator-controller
+          image: geo-locator
+          imagePullPolicy: Always
+      serviceAccountName: controller-manager
