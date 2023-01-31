@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: geo-locator-deployment
-  namespace: system
+  namespace: geo-locator-system
 spec:
   replicas: 1
   selector:
