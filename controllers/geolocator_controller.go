@@ -24,7 +24,6 @@ import (
 
 	"context"
 
-	appsv1 "github.com/torchiaf/geo-locator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -63,7 +62,7 @@ type NodeLocation struct {
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
 
-// compare nodes to see if labels is null, then update
+// compare nodes to see if labels are null, then update
 
 // the GeoLocator object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
@@ -74,9 +73,18 @@ type NodeLocation struct {
 func (r *GeoLocatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	Log := log.FromContext(ctx)
 
+	Log.Info("Reconcile cycle")
+
+	// app := &appsv1.GeoLocator{}
+	// err := r.Client.Get(ctx, req.NamespacedName, app)
+	// if err != nil {
+	// 	Log.Error(err, "Failed to get GeoLocator App")
+	// 	return ctrl.Result{}, err
+	// }
+	// Log.Info(fmt.Sprintf("Reconcile spec: %t", app.Spec.Labeled))
+
 	nodes := &corev1.NodeList{}
 	err := r.Client.List(ctx, nodes)
-
 	if err != nil {
 		Log.Error(err, "Failed to get Nodes list")
 		return ctrl.Result{}, err
@@ -87,7 +95,6 @@ func (r *GeoLocatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		address := node.Status.Addresses[0].Address
 
 		infoMessage := fmt.Sprintf("Node Ip found: %s", address)
-		fmt.Println(infoMessage) // TODO(user): remove
 		Log.Info(infoMessage)
 
 		// See https://ip-api.com
@@ -123,6 +130,6 @@ func (r *GeoLocatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GeoLocatorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv1.GeoLocator{}).
+		For(&corev1.Node{}). // Watch Nodes update
 		Complete(r)
 }

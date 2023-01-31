@@ -29,7 +29,7 @@ type GeoLocatorSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of GeoLocator. Edit geolocator_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	Labeled bool `json:"labeled"`
 }
 
 // GeoLocatorStatus defines the observed state of GeoLocator
