@@ -39,7 +39,8 @@ type GeoLocatorReconciler struct {
 
 type NodeLocation struct {
 	Query       string  `json:"query"`
-	Status      string  `json:"status,omitempty"`
+	Status      string  `json:"status"`
+	Message     string  `json:"message,omitempty"`
 	Country     string  `json:"country,omitempty"`
 	CountryCode string  `json:"countryCode,omitempty"`
 	Region      string  `json:"region,omitempty"`
@@ -54,16 +55,15 @@ type NodeLocation struct {
 	As          string  `json:"as,omitempty"`
 }
 
+// See https://ip-api.com
+const locationApi = "http://ip-api.com"
+
 //+kubebuilder:rbac:groups=apps.suse.com,resources=geolocators,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps.suse.com,resources=geolocators/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=apps.suse.com,resources=geolocators/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-
-// compare nodes to see if labels are null, then update
-
 // the GeoLocator object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
@@ -75,14 +75,6 @@ func (r *GeoLocatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	Log.Info("Reconcile cycle")
 
-	// app := &appsv1.GeoLocator{}
-	// err := r.Client.Get(ctx, req.NamespacedName, app)
-	// if err != nil {
-	// 	Log.Error(err, "Failed to get GeoLocator App")
-	// 	return ctrl.Result{}, err
-	// }
-	// Log.Info(fmt.Sprintf("Reconcile spec: %t", app.Spec.Labeled))
-
 	nodes := &corev1.NodeList{}
 	err := r.Client.List(ctx, nodes)
 	if err != nil {
@@ -91,40 +83,85 @@ func (r *GeoLocatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	for i := 0; i < len(nodes.Items); i++ {
-		node := nodes.Items[i]
-		address := node.Status.Addresses[0].Address
+		node := nodes.Items[i].DeepCopy()
+		address := filterAddressByType(node.Status.Addresses, "InternalIP")[0]
 
-		infoMessage := fmt.Sprintf("Node Ip found: %s", address)
-		Log.Info(infoMessage)
-
-		// See https://ip-api.com
-		resp, err := http.Get(`http://ip-api.com/json/`)
-
+		location, err := getNodeLocation(address.Address)
 		if err != nil {
-			Log.Error(err, "Failed to get Node position")
-			return ctrl.Result{}, err
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-
-		var location NodeLocation
-		if err := json.Unmarshal(body, &location); err != nil {
-			fmt.Println("Can not unmarshal JSON position")
+			Log.Error(err, "Unable to get Node location")
 			return ctrl.Result{}, err
 		}
 
-		node.Annotations["geo-locator.country"] = location.Country
-		node.Annotations["geo-locator.region"] = location.RegionName
-		node.Annotations["geo-locator.city"] = location.City
+		lat := fmt.Sprintf("%.3f", location.Lat)
+		lon := fmt.Sprintf("%.3f", location.Lon)
 
-		if err := r.Update(ctx, &node); err != nil {
-			Log.Error(err, "unable to update Node")
-			return ctrl.Result{}, err
+		if node.Annotations["geo-locator.lat"] != lat || node.Annotations["geo-locator.lon"] != lon {
+
+			node.Annotations["geo-locator.country"] = location.Country
+			node.Annotations["geo-locator.region"] = location.RegionName
+			node.Annotations["geo-locator.city"] = location.City
+			node.Annotations["geo-locator.lat"] = lat
+			node.Annotations["geo-locator.lon"] = lon
+
+			Log.Info("Updating Node location info")
+			updates := client.MergeFrom(&nodes.Items[i])
+			if err := r.Client.Patch(ctx, node, updates); err != nil {
+				Log.Error(err, "Failed to update Node")
+				return ctrl.Result{}, err
+			}
 		}
-
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func getNodeLocation(ip string) (NodeLocation, error) {
+
+	location, err := ipLocationRequest(ip)
+	if err != nil {
+		return NodeLocation{}, err
+	}
+
+	// Internal ip (localhost)
+	if location.Status == "fail" {
+		location, err = ipLocationRequest("")
+		if err != nil {
+			return NodeLocation{}, err
+		}
+	}
+
+	return location, nil
+}
+
+func ipLocationRequest(ip string) (NodeLocation, error) {
+
+	url := fmt.Sprintf("%s/json", locationApi)
+	if len(ip) > 0 {
+		url = fmt.Sprintf("%s/%s", url, ip)
+	}
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return NodeLocation{}, err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+
+	var location NodeLocation
+	if err := json.Unmarshal(body, &location); err != nil {
+		return NodeLocation{}, err
+	}
+
+	return location, nil
+}
+
+func filterAddressByType(na []corev1.NodeAddress, t corev1.NodeAddressType) (out []corev1.NodeAddress) {
+	for _, a := range na {
+		if a.Type == t {
+			out = append(out, a)
+		}
+	}
+	return
 }
 
 // SetupWithManager sets up the controller with the Manager.
