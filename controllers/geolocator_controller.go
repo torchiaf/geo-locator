@@ -84,6 +84,11 @@ func (r *GeoLocatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	for i := 0; i < len(nodes.Items); i++ {
 		node := nodes.Items[i].DeepCopy()
+
+		if node.Annotations["geo-locator.lat"] != "" && node.Annotations["geo-locator.lon"] != "" {
+			return ctrl.Result{}, nil
+		}
+
 		address := filterAddressByType(node.Status.Addresses, "InternalIP")[0]
 
 		location, err := getNodeLocation(address.Address)
